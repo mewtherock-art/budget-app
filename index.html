@@ -762,6 +762,7 @@ async function geminiScanSlip(file, idx) {
   try {
     const b64 = await fileToBase64(file);
     const key = localStorage.getItem('gemini_key');
+    console.log(`[slip ${idx+1}] sending to Gemini, file: ${file.name}, size: ${(file.size/1024).toFixed(0)}KB`);
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -771,14 +772,33 @@ async function geminiScanSlip(file, idx) {
       ]}]})
     });
     const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const m = text.match(/\{[\s\S]*\}/);
-    if (!m) throw new Error('no json');
-    const p = JSON.parse(m[0]);
+    console.log(`[slip ${idx+1}] raw response:`, data);
+
+    // API error (wrong key, quota, etc.)
+    if (data.error) throw new Error(`API error ${data.error.code}: ${data.error.message}`);
+
+    // Safety block
+    if (data.promptFeedback?.blockReason) throw new Error(`Blocked: ${data.promptFeedback.blockReason}`);
+
+    // No candidates
+    if (!data.candidates?.length) throw new Error('No candidates in response');
+
+    const finishReason = data.candidates[0].finishReason;
+    if (finishReason && finishReason !== 'STOP') throw new Error(`Finish reason: ${finishReason}`);
+
+    const text = data.candidates[0]?.content?.parts?.[0]?.text || '';
+    console.log(`[slip ${idx+1}] text:`, text);
+
+    // Handle both bare JSON and markdown code blocks
+    const mdMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    const rawJson = mdMatch ? mdMatch[1] : (text.match(/\{[\s\S]*\}/) || [])[0];
+    if (!rawJson) throw new Error(`No JSON in response: "${text.slice(0,100)}"`);
+
+    const p = JSON.parse(rawJson);
     return { ok: true, amount: p.amount, date: p.date, recipient: p.recipient, category: slipCats[idx], url: slipURLs[idx] };
   } catch(e) {
-    return { ok: false, category: slipCats[idx], url: slipURLs[idx] };
+    console.error(`[slip ${idx+1}] failed:`, e.message);
+    return { ok: false, errMsg: e.message, category: slipCats[idx], url: slipURLs[idx] };
   }
 }
 
@@ -797,7 +817,7 @@ function renderResults(body) {
     ${slipResults.map((r, i) => `
       <div class="result-card" id="rcard-${i}">
         <img class="result-card-img" src="${r.url}">
-        ${!r.ok ? `<div class="result-error-banner">😕 อ่านไม่สำเร็จ — กรอกข้อมูลเอง</div>` : ''}
+        ${!r.ok ? `<div class="result-error-banner">😕 อ่านไม่สำเร็จ${r.errMsg ? ` — ${r.errMsg}` : ''}</div>` : ''}
         <div class="result-card-body">
           <div class="fg" style="margin-bottom:10px">
             <label class="fl">จำนวนเงิน</label>
