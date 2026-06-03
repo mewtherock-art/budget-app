@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>บัญชีส่วนตัว</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-light: #818cf8;
+      --income: #10b981;
+      --income-bg: #d1fae5;
+      --expense: #f43f5e;
+      --expense-bg: #ffe4e6;
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --text: #1e293b;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --tab-h: 68px;
+      --hdr-h: 56px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Thai', sans-serif; background: var(--bg); color: var(--text); overscroll-behavior: none; }
+
+    /* ── Header ── */
+    .hdr {
+      position: fixed; top: 0; left: 0; right: 0; height: var(--hdr-h);
+      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      color: white; display: flex; align-items: center; padding: 0 18px; z-index: 200;
+      box-shadow: 0 2px 12px rgba(99,102,241,0.35);
+    }
+    .hdr h1 { font-size: 17px; font-weight: 700; letter-spacing: 0.2px; }
+
+    /* ── Pages ── */
+    .pages { position: fixed; top: var(--hdr-h); bottom: var(--tab-h); left: 0; right: 0; overflow: hidden; }
+    .page {
+      position: absolute; inset: 0; overflow-y: auto; padding: 16px 14px;
+      opacity: 0; pointer-events: none; transform: translateY(10px);
+      transition: opacity .22s ease, transform .22s ease;
+    }
+    .page.active { opacity: 1; pointer-events: all; transform: translateY(0); }
+
+    /* ── Tab bar ── */
+    .tabs {
+      position: fixed; bottom: 0; left: 0; right: 0; height: var(--tab-h);
+      background: white; border-top: 1px solid var(--border); display: flex; z-index: 200;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+    }
+    .tab {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; border: none; background: none; cursor: pointer; padding: 8px 4px;
+      color: var(--muted); font-size: 10px; font-family: inherit; transition: color .2s;
+      min-height: 44px;
+    }
+    .tab .ic { font-size: 21px; line-height: 1; transition: transform .2s; }
+    .tab.active { color: var(--primary); }
+    .tab.active .ic { transform: scale(1.12); }
+
+    /* ── Cards ── */
+    .card { background: var(--card); border-radius: 18px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 6px rgba(0,0,0,0.07); }
+    .card-title { font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
+
+    /* ── Home ── */
+    .balance-card {
+      background: linear-gradient(140deg, #6366f1, #8b5cf6);
+      border-radius: 22px; padding: 22px 20px; margin-bottom: 12px;
+      color: white; box-shadow: 0 6px 24px rgba(99,102,241,0.38);
+    }
+    .balance-card .lbl { font-size: 12px; opacity: .8; margin-bottom: 4px; }
+    .balance-card .bal { font-size: 34px; font-weight: 800; line-height: 1.1; margin-bottom: 6px; }
+    .balance-card .mo { font-size: 12px; opacity: .7; }
+    .sm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .sm-card { background: var(--card); border-radius: 16px; padding: 14px; box-shadow: 0 1px 6px rgba(0,0,0,0.07); }
+    .sm-card .lbl { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .sm-card .amt { font-size: 20px; font-weight: 700; }
+    .c-income { color: var(--income); } .c-expense { color: var(--expense); }
+
+    /* ── Transaction item ── */
+    .tx { display: flex; align-items: center; gap: 11px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+    .tx:first-child { padding-top: 0; } .tx:last-child { border-bottom: none; padding-bottom: 0; }
+    .tx-ico { width: 44px; height: 44px; border-radius: 13px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+    .tx-ico.income { background: var(--income-bg); } .tx-ico.expense { background: var(--expense-bg); }
+    .tx-info { flex: 1; min-width: 0; }
+    .tx-cat { font-size: 14px; font-weight: 600; }
+    .tx-sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+    .tx-dt { font-size: 11px; color: var(--muted); margin-top: 1px; }
+    .tx-amt { font-size: 15px; font-weight: 700; flex-shrink: 0; }
+
+    /* ── Add form ── */
+    .fg { margin-bottom: 16px; }
+    .fl { display: block; font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 7px; }
+    .fi {
+      width: 100%; padding: 13px 14px; border: 1.5px solid var(--border); border-radius: 13px;
+      font-size: 16px; font-family: inherit; color: var(--text); background: white;
+      transition: border-color .2s; -webkit-appearance: none; appearance: none;
+    }
+    .fi:focus { outline: none; border-color: var(--primary); }
+    .fi-wrap { position: relative; }
+    .fi-wrap .suffix { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; pointer-events: none; }
+    .type-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .type-btn {
+      padding: 13px; border: 2px solid var(--border); border-radius: 13px;
+      font-size: 15px; font-family: inherit; cursor: pointer; background: white;
+      color: var(--muted); font-weight: 600; transition: all .2s; min-height: 50px;
+    }
+    .type-btn.income.on { border-color: var(--income); background: var(--income-bg); color: #065f46; }
+    .type-btn.expense.on { border-color: var(--expense); background: var(--expense-bg); color: #9f1239; }
+    .cat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .cat-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px;
+      border: 2px solid var(--border); border-radius: 13px; font-size: 11px; font-family: inherit;
+      cursor: pointer; background: white; color: var(--muted); transition: all .15s;
+      min-height: 66px; line-height: 1.3; text-align: center;
+    }
+    .cat-btn .ci { font-size: 22px; }
+    .cat-btn.on { border-color: var(--primary); background: #eef2ff; color: var(--primary); font-weight: 600; }
+    .save-btn {
+      width: 100%; padding: 16px; background: var(--primary); color: white; border: none;
+      border-radius: 15px; font-size: 16px; font-family: inherit; font-weight: 700;
+      cursor: pointer; margin-top: 4px; transition: opacity .2s, transform .1s; min-height: 56px;
+      box-shadow: 0 4px 16px rgba(99,102,241,0.38);
+    }
+    .save-btn:active { opacity: .85; transform: scale(.985); }
+
+    /* ── Summary ── */
+    .mo-sel {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--card); border-radius: 16px; padding: 12px 16px;
+      margin-bottom: 12px; box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+    }
+    .mo-nav { width: 38px; height: 38px; border: none; background: var(--bg); border-radius: 11px; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; }
+    .mo-label { font-size: 16px; font-weight: 700; }
+    .chart-wrap { position: relative; height: 210px; }
+    .rank-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .rank-item:last-child { border-bottom: none; }
+    .rank-ico { width: 38px; height: 38px; border-radius: 11px; background: var(--expense-bg); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+    .rank-mid { flex: 1; }
+    .rank-cat { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .rank-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .rank-fill { height: 100%; background: var(--expense); border-radius: 3px; transition: width .4s ease; }
+    .rank-pct { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .rank-amt { font-size: 13px; font-weight: 700; color: var(--expense); flex-shrink: 0; }
+
+    /* ── History ── */
+    .mo-group-title { font-size: 12px; font-weight: 700; color: var(--muted); padding: 10px 2px 6px; text-transform: uppercase; letter-spacing: .6px; }
+    .del-btn { width: 34px; height: 34px; border: none; background: var(--expense-bg); border-radius: 9px; cursor: pointer; color: var(--expense); font-size: 15px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+    /* ── Empty state ── */
+    .empty { text-align: center; padding: 44px 20px; color: var(--muted); }
+    .empty .ei { font-size: 48px; margin-bottom: 12px; }
+    .empty p { font-size: 14px; line-height: 1.6; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: calc(var(--tab-h) + 14px); left: 50%;
+      transform: translateX(-50%) translateY(70px); background: #1e293b; color: white;
+      padding: 10px 22px; border-radius: 22px; font-size: 14px; z-index: 500;
+      transition: transform .28s ease; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ── Confirm sheet ── */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 300;
+      display: flex; align-items: flex-end; opacity: 0; pointer-events: none; transition: opacity .25s;
+    }
+    .overlay.show { opacity: 1; pointer-events: all; }
+    .sheet { background: white; border-radius: 22px 22px 0 0; padding: 26px 20px 32px; width: 100%; transform: translateY(100%); transition: transform .3s ease; }
+    .overlay.show .sheet { transform: translateY(0); }
+    .sheet-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+    .sheet-msg { font-size: 14px; color: var(--muted); margin-bottom: 22px; }
+    .sheet-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .sheet-btn { padding: 15px; border: none; border-radius: 13px; font-size: 15px; font-family: inherit; cursor: pointer; font-weight: 600; min-height: 50px; }
+    .sheet-btn.cancel { background: var(--bg); color: var(--text); }
+    .sheet-btn.del { background: var(--expense); color: white; }
+
+    ::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="hdr"><h1 id="hdr-title">บัญชีส่วนตัว</h1></header>
+
+<div class="pages">
+
+  <!-- ── HOME ── -->
+  <div class="page active" id="page-home">
+    <div class="balance-card">
+      <div class="lbl">ยอดคงเหลือเดือนนี้</div>
+      <div class="bal" id="h-bal">฿0</div>
+      <div class="mo" id="h-mo"></div>
+    </div>
+    <div class="sm-grid">
+      <div class="sm-card"><div class="lbl">💚 รายรับ</div><div class="amt c-income" id="h-inc">฿0</div></div>
+      <div class="sm-card"><div class="lbl">❤️ รายจ่าย</div><div class="amt c-expense" id="h-exp">฿0</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">รายการล่าสุด</div>
+      <div id="h-recent"></div>
+    </div>
+  </div>
+
+  <!-- ── ADD ── -->
+  <div class="page" id="page-add">
+    <div class="card">
+      <div class="fg">
+        <label class="fl">ประเภท</label>
+        <div class="type-row">
+          <button class="type-btn income on" id="btn-inc" onclick="setType('income')">💚 รายรับ</button>
+          <button class="type-btn expense" id="btn-exp" onclick="setType('expense')">❤️ รายจ่าย</button>
+        </div>
+      </div>
+      <div class="fg">
+        <label class="fl">จำนวนเงิน</label>
+        <div class="fi-wrap">
+          <input class="fi" type="number" id="in-amt" placeholder="0.00" inputmode="decimal" step="0.01" min="0" style="padding-right:52px">
+          <span class="suffix">บาท</span>
+        </div>
+      </div>
+      <div class="fg">
+        <label class="fl">หมวดหมู่</label>
+        <div class="cat-grid" id="cat-grid"></div>
+      </div>
+      <div class="fg">
+        <label class="fl">หมายเหตุ</label>
+        <input class="fi" type="text" id="in-note" placeholder="รายละเอียด (ไม่บังคับ)">
+      </div>
+      <div class="fg">
+        <label class="fl">วันที่</label>
+        <input class="fi" type="date" id="in-date">
+      </div>
+      <button class="save-btn" onclick="submitTx()">บันทึกรายการ</button>
+    </div>
+  </div>
+
+  <!-- ── SUMMARY ── -->
+  <div class="page" id="page-summary">
+    <div class="mo-sel">
+      <button class="mo-nav" onclick="chgMo(-1)">‹</button>
+      <span class="mo-label" id="s-mo-label"></span>
+      <button class="mo-nav" onclick="chgMo(1)">›</button>
+    </div>
+    <div class="card">
+      <div class="card-title">รายรับ-รายจ่าย 12 เดือนล่าสุด</div>
+      <div class="chart-wrap"><canvas id="bar-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title" id="rank-title">รายจ่ายแยกหมวดหมู่</div>
+      <div id="rank-list"></div>
+    </div>
+  </div>
+
+  <!-- ── HISTORY ── -->
+  <div class="page" id="page-history">
+    <div id="hist-list"></div>
+  </div>
+
+</div>
+
+<!-- Tab bar -->
+<nav class="tabs">
+  <button class="tab active" onclick="goTab('home',this)"><span class="ic">🏠</span><span>หน้าหลัก</span></button>
+  <button class="tab" onclick="goTab('add',this)"><span class="ic">➕</span><span>เพิ่มรายการ</span></button>
+  <button class="tab" onclick="goTab('summary',this)"><span class="ic">📊</span><span>สรุป</span></button>
+  <button class="tab" onclick="goTab('history',this)"><span class="ic">📋</span><span>ประวัติ</span></button>
+</nav>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Delete confirm -->
+<div class="overlay" id="ov">
+  <div class="sheet">
+    <div class="sheet-title">ลบรายการ</div>
+    <div class="sheet-msg">ยืนยันการลบรายการนี้? ไม่สามารถกู้คืนได้</div>
+    <div class="sheet-btns">
+      <button class="sheet-btn cancel" onclick="closeOv()">ยกเลิก</button>
+      <button class="sheet-btn del" onclick="doDelete()">ลบ</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────────
+const KEY = 'budget_v1';
+const getTxs = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
+const saveTxs = d => localStorage.setItem(KEY, JSON.stringify(d));
+
+const INC_CATS = [
+  { id:'salary',   label:'เงินเดือน',    icon:'💼' },
+  { id:'freelance',label:'Freelance',     icon:'💻' },
+  { id:'extra',    label:'รายได้เสริม',   icon:'💰' },
+  { id:'dividend', label:'เงินปันผล',     icon:'📈' },
+  { id:'other_i',  label:'อื่นๆ',         icon:'✨' },
+];
+const EXP_CATS = [
+  { id:'food',     label:'อาหาร',         icon:'🍜' },
+  { id:'housing',  label:'ที่พัก',         icon:'🏠' },
+  { id:'util',     label:'น้ำ/ไฟ/เน็ต',   icon:'💡' },
+  { id:'travel',   label:'เดินทาง',        icon:'🚌' },
+  { id:'health',   label:'สุขภาพ',         icon:'💊' },
+  { id:'shop',     label:'ช้อปปิ้ง',       icon:'🛍️' },
+  { id:'fun',      label:'บันเทิง',        icon:'🎬' },
+  { id:'invest',   label:'ลงทุน/ออม',      icon:'🏦' },
+  { id:'other_e',  label:'อื่นๆ',          icon:'📌' },
+];
+const catInfo = (type, id) => (type==='income' ? INC_CATS : EXP_CATS).find(c=>c.id===id) || {label:id,icon:'•'};
+
+// ── UTILS ─────────────────────────────────────────────────────
+const TH_MO = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const TH_MO_F = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+const fmtAmt = n => '฿' + n.toLocaleString('th-TH', {minimumFractionDigits:0, maximumFractionDigits:2});
+const fmtDate = s => { const [y,m,d] = s.split('-'); return `${d} ${TH_MO[+m-1]} ${+y+543}`; };
+const moKey = s => s.slice(0,7);
+const moLabel = k => { const [y,m] = k.split('-'); return `${TH_MO_F[+m-1]} ${+y+543}`; };
+const today = () => new Date().toISOString().slice(0,10);
+const curMo = () => today().slice(0,7);
+
+// ── STATE ─────────────────────────────────────────────────────
+let curType = 'income', selCat = null, sMo = curMo(), delId = null, bChart = null;
+
+// ── TABS ──────────────────────────────────────────────────────
+const titles = { home:'บัญชีส่วนตัว', add:'เพิ่มรายการ', summary:'สรุป', history:'ประวัติ' };
+function goTab(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  btn.classList.add('active');
+  document.getElementById('hdr-title').textContent = titles[id];
+  if (id==='home') renderHome();
+  if (id==='summary') renderSummary();
+  if (id==='history') renderHistory();
+}
+
+// ── HOME ──────────────────────────────────────────────────────
+function renderHome() {
+  const txs = getTxs(); const key = curMo();
+  const mt = txs.filter(t => moKey(t.date)===key);
+  const inc = mt.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const exp = mt.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const [y,m] = key.split('-');
+  document.getElementById('h-mo').textContent = `${TH_MO_F[+m-1]} ${+y+543}`;
+  document.getElementById('h-bal').textContent = fmtAmt(inc-exp);
+  document.getElementById('h-inc').textContent = fmtAmt(inc);
+  document.getElementById('h-exp').textContent = fmtAmt(exp);
+  const recent = [...txs].sort((a,b)=>b.id-a.id).slice(0,5);
+  const el = document.getElementById('h-recent');
+  if (!recent.length) { el.innerHTML=`<div class="empty"><div class="ei">📭</div><p>ยังไม่มีรายการ<br>เพิ่มรายการแรกได้เลย</p></div>`; return; }
+  el.innerHTML = recent.map(t => txHTML(t, false)).join('');
+}
+
+function txHTML(t, showDel) {
+  const c = catInfo(t.type, t.category);
+  const sign = t.type==='income' ? '+' : '-';
+  const cls = t.type==='income' ? 'c-income' : 'c-expense';
+  const del = showDel ? `<button class="del-btn" onclick="askDel('${t.id}')">🗑️</button>` : '';
+  return `<div class="tx">
+    <div class="tx-ico ${t.type}">${c.icon}</div>
+    <div class="tx-info">
+      <div class="tx-cat">${c.label}</div>
+      <div class="tx-sub">${t.note || '—'}</div>
+      <div class="tx-dt">${fmtDate(t.date)}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <div class="tx-amt ${cls}">${sign}${fmtAmt(t.amount)}</div>
+      ${del}
+    </div>
+  </div>`;
+}
+
+// ── ADD ───────────────────────────────────────────────────────
+function setType(type) {
+  curType = type; selCat = null;
+  document.getElementById('btn-inc').classList.toggle('on', type==='income');
+  document.getElementById('btn-exp').classList.toggle('on', type==='expense');
+  renderCatGrid();
+}
+function renderCatGrid() {
+  const cats = curType==='income' ? INC_CATS : EXP_CATS;
+  document.getElementById('cat-grid').innerHTML = cats.map(c =>
+    `<button class="cat-btn${selCat===c.id?' on':''}" onclick="selCatFn('${c.id}')">
+      <span class="ci">${c.icon}</span><span>${c.label}</span>
+    </button>`
+  ).join('');
+}
+function selCatFn(id) { selCat = id; renderCatGrid(); }
+function submitTx() {
+  const amt = parseFloat(document.getElementById('in-amt').value);
+  const note = document.getElementById('in-note').value.trim();
+  const date = document.getElementById('in-date').value;
+  if (!amt || amt <= 0) { toast('กรุณาระบุจำนวนเงิน'); return; }
+  if (!selCat) { toast('กรุณาเลือกหมวดหมู่'); return; }
+  if (!date) { toast('กรุณาเลือกวันที่'); return; }
+  const txs = getTxs();
+  txs.push({ id: Date.now().toString(), type: curType, amount: amt, category: selCat, note, date });
+  saveTxs(txs);
+  document.getElementById('in-amt').value = '';
+  document.getElementById('in-note').value = '';
+  document.getElementById('in-date').value = today();
+  selCat = null; renderCatGrid();
+  toast('บันทึกสำเร็จ ✓');
+}
+
+// ── SUMMARY ───────────────────────────────────────────────────
+function chgMo(d) {
+  const [y,m] = sMo.split('-').map(Number);
+  const nd = new Date(y, m-1+d, 1);
+  sMo = `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}`;
+  renderSummary();
+}
+function renderSummary() {
+  document.getElementById('s-mo-label').textContent = moLabel(sMo);
+  renderChart(); renderRanking();
+}
+function renderChart() {
+  const txs = getTxs(); const labels=[], incD=[], expD=[];
+  for (let i=11; i>=0; i--) {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-i);
+    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const mt = txs.filter(t=>moKey(t.date)===k);
+    labels.push(TH_MO[d.getMonth()]);
+    incD.push(mt.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0));
+    expD.push(mt.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0));
+  }
+  const ctx = document.getElementById('bar-chart').getContext('2d');
+  if (bChart) bChart.destroy();
+  bChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label:'รายรับ', data:incD, backgroundColor:'#10b981', borderRadius:5, barPercentage:.75 },
+      { label:'รายจ่าย', data:expD, backgroundColor:'#f43f5e', borderRadius:5, barPercentage:.75 }
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { font:{size:11}, boxWidth:12 } },
+        tooltip: { callbacks: { label: c => ` ${fmtAmt(c.raw)}` } }
+      },
+      scales: {
+        x: { grid:{display:false}, ticks:{font:{size:10}} },
+        y: { ticks: { font:{size:10}, callback: v => v>=1000?(v/1000).toFixed(0)+'K':v } }
+      }
+    }
+  });
+}
+function renderRanking() {
+  const txs = getTxs();
+  const mt = txs.filter(t=>moKey(t.date)===sMo && t.type==='expense');
+  const map = {};
+  mt.forEach(t => { map[t.category]=(map[t.category]||0)+t.amount; });
+  const sorted = Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  const total = sorted.reduce((s,[,v])=>s+v,0);
+  document.getElementById('rank-title').textContent = `รายจ่ายแยกหมวด — ${moLabel(sMo)}`;
+  const el = document.getElementById('rank-list');
+  if (!sorted.length) { el.innerHTML=`<div class="empty"><div class="ei">📊</div><p>ไม่มีรายจ่ายในเดือนนี้</p></div>`; return; }
+  el.innerHTML = sorted.map(([id,amt]) => {
+    const c = catInfo('expense', id);
+    const pct = total>0 ? (amt/total*100).toFixed(0) : 0;
+    return `<div class="rank-item">
+      <div class="rank-ico">${c.icon}</div>
+      <div class="rank-mid">
+        <div class="rank-cat">${c.label}</div>
+        <div class="rank-bar"><div class="rank-fill" style="width:${pct}%"></div></div>
+        <div class="rank-pct">${pct}% ของรายจ่ายทั้งหมด</div>
+      </div>
+      <div class="rank-amt">${fmtAmt(amt)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── HISTORY ───────────────────────────────────────────────────
+function renderHistory() {
+  const txs = getTxs(); const el = document.getElementById('hist-list');
+  if (!txs.length) { el.innerHTML=`<div class="empty"><div class="ei">📭</div><p>ยังไม่มีรายการ</p></div>`; return; }
+  const groups = {};
+  txs.forEach(t => { const k=moKey(t.date); (groups[k]=groups[k]||[]).push(t); });
+  const keys = Object.keys(groups).sort((a,b)=>b.localeCompare(a));
+  el.innerHTML = keys.map(k => {
+    const list = groups[k].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
+    return `<div class="mo-group-title">${moLabel(k)}</div>
+      <div class="card">${list.map(t=>txHTML(t,true)).join('')}</div>`;
+  }).join('');
+}
+
+// ── DELETE ────────────────────────────────────────────────────
+function askDel(id) { delId=id; document.getElementById('ov').classList.add('show'); }
+function closeOv() { delId=null; document.getElementById('ov').classList.remove('show'); }
+function doDelete() {
+  if (!delId) return;
+  saveTxs(getTxs().filter(t=>t.id!==delId));
+  closeOv(); renderHistory(); toast('ลบรายการแล้ว');
+}
+document.getElementById('ov').addEventListener('click', e => { if(e.target===e.currentTarget) closeOv(); });
+
+// ── TOAST ─────────────────────────────────────────────────────
+let _tt;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(_tt); _tt = setTimeout(()=>el.classList.remove('show'), 2500);
+}
+
+// ── INIT ──────────────────────────────────────────────────────
+document.getElementById('in-date').value = today();
+renderCatGrid();
+renderHome();
+</script>
+</body>
+</html>
