@@ -155,11 +155,12 @@
     /* ── Toast ── */
     .toast {
       position: fixed; bottom: calc(var(--tab-h) + 14px); left: 50%;
-      transform: translateX(-50%) translateY(70px); background: #1e293b; color: white;
+      transform: translateX(-50%) translateY(12px); background: #1e293b; color: white;
       padding: 10px 22px; border-radius: 22px; font-size: 14px; z-index: 500;
-      transition: transform .28s ease; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+      opacity: 0; pointer-events: none;
+      transition: opacity .25s ease, transform .25s ease; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
     }
-    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.show { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
 
     /* ── Confirm sheet ── */
     .overlay {
