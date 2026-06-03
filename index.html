@@ -315,13 +315,40 @@ const TH_MO = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','ม
 const TH_MO_F = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const fmtAmt = n => '฿' + n.toLocaleString('th-TH', {minimumFractionDigits:0, maximumFractionDigits:2});
 const fmtDate = s => { const [y,m,d] = s.split('-'); return `${d} ${TH_MO[+m-1]} ${+y+543}`; };
-const moKey = s => s.slice(0,7);
-const moLabel = k => { const [y,m] = k.split('-'); return `${TH_MO_F[+m-1]} ${+y+543}`; };
 const today = () => new Date().toISOString().slice(0,10);
-const curMo = () => today().slice(0,7);
+
+// งวด 25-24: วันที่ 1-24 → งวดเดือนนั้น, วันที่ 25-31 → งวดเดือนถัดไป
+// period key = YYYY-MM ของเดือนที่มีวันที่ 24 (ปลายงวด)
+function periodKey(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (d >= 25) {
+    const next = new Date(y, m, 1); // เดือนถัดไป
+    return `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}`;
+  }
+  return `${y}-${String(m).padStart(2,'0')}`;
+}
+function curPeriodKey() {
+  const now = new Date();
+  if (now.getDate() >= 25) {
+    const next = new Date(now.getFullYear(), now.getMonth()+1, 1);
+    return `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}`;
+  }
+  return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+}
+// label: "25 พ.ค. – 24 มิ.ย. 2569"
+function periodLabel(k) {
+  const [y, m] = k.split('-').map(Number);
+  const prev = new Date(y, m-2, 1);
+  return `25 ${TH_MO[prev.getMonth()]} – 24 ${TH_MO[m-1]} ${y+543}`;
+}
+function periodLabelFull(k) {
+  const [y, m] = k.split('-').map(Number);
+  const prev = new Date(y, m-2, 1);
+  return `25 ${TH_MO_F[prev.getMonth()]} – 24 ${TH_MO_F[m-1]} ${y+543}`;
+}
 
 // ── STATE ─────────────────────────────────────────────────────
-let curType = 'income', selCat = null, sMo = curMo(), delId = null, bChart = null;
+let curType = 'income', selCat = null, sMo = curPeriodKey(), delId = null, bChart = null;
 
 // ── TABS ──────────────────────────────────────────────────────
 const titles = { home:'บัญชีส่วนตัว', add:'เพิ่มรายการ', summary:'สรุป', history:'ประวัติ' };
@@ -338,12 +365,11 @@ function goTab(id, btn) {
 
 // ── HOME ──────────────────────────────────────────────────────
 function renderHome() {
-  const txs = getTxs(); const key = curMo();
-  const mt = txs.filter(t => moKey(t.date)===key);
+  const txs = getTxs(); const key = curPeriodKey();
+  const mt = txs.filter(t => periodKey(t.date)===key);
   const inc = mt.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const exp = mt.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
-  const [y,m] = key.split('-');
-  document.getElementById('h-mo').textContent = `${TH_MO_F[+m-1]} ${+y+543}`;
+  document.getElementById('h-mo').textContent = periodLabel(key);
   document.getElementById('h-bal').textContent = fmtAmt(inc-exp);
   document.getElementById('h-inc').textContent = fmtAmt(inc);
   document.getElementById('h-exp').textContent = fmtAmt(exp);
@@ -413,16 +439,18 @@ function chgMo(d) {
   renderSummary();
 }
 function renderSummary() {
-  document.getElementById('s-mo-label').textContent = moLabel(sMo);
+  document.getElementById('s-mo-label').textContent = periodLabel(sMo);
   renderChart(); renderRanking();
 }
 function renderChart() {
   const txs = getTxs(); const labels=[], incD=[], expD=[];
+  const baseKey = curPeriodKey();
+  const [by, bm] = baseKey.split('-').map(Number);
   for (let i=11; i>=0; i--) {
-    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-i);
+    const d = new Date(by, bm-1-i, 1);
     const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    const mt = txs.filter(t=>moKey(t.date)===k);
-    labels.push(TH_MO[d.getMonth()]);
+    const mt = txs.filter(t=>periodKey(t.date)===k);
+    labels.push(TH_MO[d.getMonth()]); // เดือนปลายงวด
     incD.push(mt.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0));
     expD.push(mt.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0));
   }
@@ -449,12 +477,12 @@ function renderChart() {
 }
 function renderRanking() {
   const txs = getTxs();
-  const mt = txs.filter(t=>moKey(t.date)===sMo && t.type==='expense');
+  const mt = txs.filter(t=>periodKey(t.date)===sMo && t.type==='expense');
   const map = {};
   mt.forEach(t => { map[t.category]=(map[t.category]||0)+t.amount; });
   const sorted = Object.entries(map).sort((a,b)=>b[1]-a[1]);
   const total = sorted.reduce((s,[,v])=>s+v,0);
-  document.getElementById('rank-title').textContent = `รายจ่ายแยกหมวด — ${moLabel(sMo)}`;
+  document.getElementById('rank-title').textContent = `รายจ่ายแยกหมวด — ${periodLabel(sMo)}`;
   const el = document.getElementById('rank-list');
   if (!sorted.length) { el.innerHTML=`<div class="empty"><div class="ei">📊</div><p>ไม่มีรายจ่ายในเดือนนี้</p></div>`; return; }
   el.innerHTML = sorted.map(([id,amt]) => {
@@ -477,11 +505,11 @@ function renderHistory() {
   const txs = getTxs(); const el = document.getElementById('hist-list');
   if (!txs.length) { el.innerHTML=`<div class="empty"><div class="ei">📭</div><p>ยังไม่มีรายการ</p></div>`; return; }
   const groups = {};
-  txs.forEach(t => { const k=moKey(t.date); (groups[k]=groups[k]||[]).push(t); });
+  txs.forEach(t => { const k=periodKey(t.date); (groups[k]=groups[k]||[]).push(t); });
   const keys = Object.keys(groups).sort((a,b)=>b.localeCompare(a));
   el.innerHTML = keys.map(k => {
     const list = groups[k].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
-    return `<div class="mo-group-title">${moLabel(k)}</div>
+    return `<div class="mo-group-title">${periodLabelFull(k)}</div>
       <div class="card">${list.map(t=>txHTML(t,true)).join('')}</div>`;
   }).join('');
 }
