@@ -661,7 +661,7 @@ async function testApi() {
   if (!key) { el.textContent = '❌ ยังไม่มี API Key'; el.style.color='var(--expense)'; return; }
   el.textContent = '⏳ กำลังทดสอบ...'; el.style.color='var(--muted)';
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [{ text: 'reply with the word OK only' }] }] })
@@ -791,7 +791,7 @@ async function geminiScanSlip(file, idx) {
     const b64 = await fileToBase64(file);
     const key = localStorage.getItem('gemini_key');
     console.log(`[slip ${idx+1}] sending to Gemini, file: ${file.name}, size: ${(file.size/1024).toFixed(0)}KB`);
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [
