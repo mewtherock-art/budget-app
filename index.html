@@ -879,7 +879,8 @@ function renderResults(body) {
           <button class="result-save-btn" id="r-btn-${i}" onclick="saveSlipResult(${i})">✓ บันทึก</button>
         </div>
       </div>`).join('')}
-    <button class="save-btn" style="margin-top:4px;margin-bottom:8px" onclick="saveAllSlipResults()">บันทึกทั้งหมด</button>`;
+    <button class="save-btn" style="margin-top:4px;margin-bottom:10px" onclick="saveAllSlipResults()">บันทึกทั้งหมด</button>
+    <button class="sheet-btn cancel" style="width:100%;margin-bottom:8px" onclick="closeSlip();goTab('home',document.querySelector('.tab'))">ยกเลิก / กลับหน้าหลัก</button>`;
 
   // Pre-select categories
   slipResults.forEach((r, i) => {
