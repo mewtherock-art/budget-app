@@ -360,6 +360,13 @@
       </div>
       <button class="settings-btn" onclick="changeApiKey()">เปลี่ยน</button>
     </div>
+    <div class="settings-item">
+      <div>
+        <div class="settings-label">🧪 ทดสอบ API</div>
+        <div class="settings-sub" id="api-test-result">-</div>
+      </div>
+      <button class="settings-btn" onclick="testApi()">ทดสอบ</button>
+    </div>
   </div>
 </div>
 
@@ -648,6 +655,27 @@ function saveKey() {
   toast('บันทึก API Key แล้ว ✓');
 }
 function skipKey() { document.getElementById('key-overlay').classList.remove('show'); }
+async function testApi() {
+  const key = localStorage.getItem('gemini_key');
+  const el = document.getElementById('api-test-result');
+  if (!key) { el.textContent = '❌ ยังไม่มี API Key'; el.style.color='var(--expense)'; return; }
+  el.textContent = '⏳ กำลังทดสอบ...'; el.style.color='var(--muted)';
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: 'reply with the word OK only' }] }] })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(`${data.error.code}: ${data.error.message}`);
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    el.textContent = `✅ ใช้งานได้ (${text.trim().slice(0,30)})`;
+    el.style.color = 'var(--income)';
+  } catch(e) {
+    el.textContent = `❌ ${e.message}`;
+    el.style.color = 'var(--expense)';
+  }
+}
 function changeApiKey() {
   closeSettings();
   document.getElementById('key-input').value = localStorage.getItem('gemini_key') || '';
