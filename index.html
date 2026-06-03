@@ -217,7 +217,7 @@
       <div class="fg">
         <label class="fl">จำนวนเงิน</label>
         <div class="fi-wrap">
-          <input class="fi" type="number" id="in-amt" placeholder="0.00" inputmode="decimal" step="0.01" min="0" style="padding-right:52px">
+          <input class="fi" type="text" id="in-amt" placeholder="0.00" inputmode="decimal" style="padding-right:52px">
           <span class="suffix">บาท</span>
         </div>
       </div>
@@ -415,7 +415,7 @@ function renderCatGrid() {
 }
 function selCatFn(id) { selCat = id; renderCatGrid(); }
 function submitTx() {
-  const amt = parseFloat(document.getElementById('in-amt').value);
+  const amt = parseFloat(document.getElementById('in-amt').value.replace(/,/g, ''));
   const note = document.getElementById('in-note').value.trim();
   const date = document.getElementById('in-date').value;
   if (!amt || amt <= 0) { toast('กรุณาระบุจำนวนเงิน'); return; }
@@ -531,6 +531,24 @@ function toast(msg) {
   el.textContent = msg; el.classList.add('show');
   clearTimeout(_tt); _tt = setTimeout(()=>el.classList.remove('show'), 2500);
 }
+
+// ── AMOUNT INPUT WITH COMMAS ──────────────────────────────────
+document.getElementById('in-amt').addEventListener('input', function() {
+  const pos = this.selectionStart;
+  const prev = this.value;
+  // strip everything except digits and first dot
+  let raw = prev.replace(/,/g, '');
+  const dotIdx = raw.indexOf('.');
+  if (dotIdx !== -1) raw = raw.slice(0, dotIdx+1) + raw.slice(dotIdx+1).replace(/\./g, '');
+  raw = raw.replace(/[^0-9.]/g, '');
+  // format integer part with commas
+  const parts = raw.split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const formatted = parts.join('.');
+  const diff = formatted.length - prev.length;
+  this.value = formatted;
+  try { this.setSelectionRange(pos + diff, pos + diff); } catch(e) {}
+});
 
 // ── INIT ──────────────────────────────────────────────────────
 document.getElementById('in-date').value = today();
