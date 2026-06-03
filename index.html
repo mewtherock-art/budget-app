@@ -338,9 +338,9 @@
 <!-- API Key Modal -->
 <div class="key-overlay" id="key-overlay">
   <div class="key-modal">
-    <h2>🔑 ตั้งค่า Gemini API Key</h2>
-    <p>ใช้สำหรับสแกนสลิปอัตโนมัติด้วย AI<br>ไม่มีค่าใช้จ่าย สมัครได้ฟรี</p>
-    <a class="key-link" href="https://aistudio.google.com/apikey" target="_blank">➜ รับ API Key ที่ Google AI Studio</a>
+    <h2>🔑 ตั้งค่า OpenRouter API Key</h2>
+    <p>ใช้สำหรับสแกนสลิปอัตโนมัติด้วย AI<br>สมัครฟรีได้ที่ openrouter.ai</p>
+    <a class="key-link" href="https://openrouter.ai/keys" target="_blank">➜ รับ API Key ที่ OpenRouter</a>
     <input class="fi" type="text" id="key-input" placeholder="AIza..." autocomplete="off">
     <div class="key-btns">
       <button class="key-btn skip" onclick="skipKey()">ข้าม</button>
@@ -355,7 +355,7 @@
     <div class="sheet-title">⚙️ ตั้งค่า</div>
     <div class="settings-item">
       <div>
-        <div class="settings-label">🔑 Gemini API Key</div>
+        <div class="settings-label">🔑 OpenRouter API Key</div>
         <div class="settings-sub" id="settings-key-status">ยังไม่ตั้งค่า</div>
       </div>
       <button class="settings-btn" onclick="changeApiKey()">เปลี่ยน</button>
@@ -643,33 +643,50 @@ function toast(msg) {
 
 // ── API KEY ───────────────────────────────────────────────────
 function checkApiKey() {
-  if (!localStorage.getItem('gemini_key')) {
+  if (!localStorage.getItem('or_key')) {
     document.getElementById('key-overlay').classList.add('show');
   }
 }
 function saveKey() {
   const val = document.getElementById('key-input').value.trim();
   if (!val) { toast('กรุณาใส่ API Key'); return; }
-  localStorage.setItem('gemini_key', val);
+  localStorage.setItem('or_key', val);
   document.getElementById('key-overlay').classList.remove('show');
   toast('บันทึก API Key แล้ว ✓');
 }
 function skipKey() { document.getElementById('key-overlay').classList.remove('show'); }
+const SLIP_MODELS = [
+  'google/gemma-4-26b-a4b-it',
+  'mistralai/mistral-7b-instruct:free',
+  'meta-llama/llama-3.2-3b-instruct:free',
+  'google/gemma-3-4b-it:free',
+];
+
+async function orFetch(model, messages) {
+  const key = localStorage.getItem('or_key');
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`,
+      'HTTP-Referer': 'https://mewtherock-art.github.io/budget-app',
+      'X-Title': 'Budget App'
+    },
+    body: JSON.stringify({ model, messages })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  return data.choices?.[0]?.message?.content || '';
+}
+
 async function testApi() {
-  const key = localStorage.getItem('gemini_key');
+  const key = localStorage.getItem('or_key');
   const el = document.getElementById('api-test-result');
   if (!key) { el.textContent = '❌ ยังไม่มี API Key'; el.style.color='var(--expense)'; return; }
   el.textContent = '⏳ กำลังทดสอบ...'; el.style.color='var(--muted)';
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: 'reply with the word OK only' }] }] })
-    });
-    const data = await res.json();
-    if (data.error) throw new Error(`${data.error.code}: ${data.error.message}`);
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    el.textContent = `✅ ใช้งานได้ (${text.trim().slice(0,30)})`;
+    const text = await orFetch(SLIP_MODELS[0], [{ role:'user', content:'reply with the word OK only' }]);
+    el.textContent = `✅ ใช้งานได้ — ${SLIP_MODELS[0].split('/')[1]} (${text.trim().slice(0,20)})`;
     el.style.color = 'var(--income)';
   } catch(e) {
     el.textContent = `❌ ${e.message}`;
@@ -678,13 +695,13 @@ async function testApi() {
 }
 function changeApiKey() {
   closeSettings();
-  document.getElementById('key-input').value = localStorage.getItem('gemini_key') || '';
+  document.getElementById('key-input').value = localStorage.getItem('or_key') || '';
   document.getElementById('key-overlay').classList.add('show');
 }
 
 // ── SETTINGS ─────────────────────────────────────────────────
 function openSettings() {
-  const key = localStorage.getItem('gemini_key');
+  const key = localStorage.getItem('or_key');
   document.getElementById('settings-key-status').textContent = key ? `ตั้งค่าแล้ว (${key.slice(0,10)}...)` : 'ยังไม่ตั้งค่า';
   document.getElementById('settings-overlay').classList.add('show');
 }
@@ -695,7 +712,7 @@ document.getElementById('settings-overlay').addEventListener('click', e => { if 
 let slipFiles = [], slipCats = [], slipResults = [], slipURLs = [], savedSlipIds = new Set();
 
 function openSlipScanner() {
-  if (!localStorage.getItem('gemini_key')) {
+  if (!localStorage.getItem('or_key')) {
     document.getElementById('key-overlay').classList.add('show');
     return;
   }
@@ -786,48 +803,38 @@ async function startScan() {
   showSlipStep('results');
 }
 
+function parseSlipJson(text) {
+  const md = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const raw = md ? md[1] : (text.match(/\{[\s\S]*\}/) || [])[0];
+  if (!raw) throw new Error(`No JSON: "${text.slice(0,80)}"`);
+  return JSON.parse(raw);
+}
+
 async function geminiScanSlip(file, idx) {
-  try {
-    const b64 = await fileToBase64(file);
-    const key = localStorage.getItem('gemini_key');
-    console.log(`[slip ${idx+1}] sending to Gemini, file: ${file.name}, size: ${(file.size/1024).toFixed(0)}KB`);
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [
-        { text: 'อ่านสลิปโอนเงินนี้ ตอบกลับเป็น JSON เท่านั้น ไม่มีข้อความอื่น format: {"amount": number, "date": "YYYY-MM-DD", "recipient": string} ถ้าหาข้อมูลไม่เจอใส่ null' },
-        { inline_data: { mime_type: file.type || 'image/jpeg', data: b64 } }
-      ]}]})
-    });
-    const data = await res.json();
-    console.log(`[slip ${idx+1}] raw response:`, data);
+  const b64 = await fileToBase64(file);
+  const mime = file.type || 'image/jpeg';
+  const prompt = 'อ่านสลิปโอนเงินนี้ ตอบกลับเป็น JSON เท่านั้น ไม่มีข้อความอื่น format: {"amount": number, "date": "YYYY-MM-DD", "recipient": string} ถ้าหาข้อมูลไม่เจอใส่ null';
+  let lastErr = '';
 
-    // API error (wrong key, quota, etc.)
-    if (data.error) throw new Error(`API error ${data.error.code}: ${data.error.message}`);
-
-    // Safety block
-    if (data.promptFeedback?.blockReason) throw new Error(`Blocked: ${data.promptFeedback.blockReason}`);
-
-    // No candidates
-    if (!data.candidates?.length) throw new Error('No candidates in response');
-
-    const finishReason = data.candidates[0].finishReason;
-    if (finishReason && finishReason !== 'STOP') throw new Error(`Finish reason: ${finishReason}`);
-
-    const text = data.candidates[0]?.content?.parts?.[0]?.text || '';
-    console.log(`[slip ${idx+1}] text:`, text);
-
-    // Handle both bare JSON and markdown code blocks
-    const mdMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    const rawJson = mdMatch ? mdMatch[1] : (text.match(/\{[\s\S]*\}/) || [])[0];
-    if (!rawJson) throw new Error(`No JSON in response: "${text.slice(0,100)}"`);
-
-    const p = JSON.parse(rawJson);
-    return { ok: true, amount: p.amount, date: p.date, recipient: p.recipient, category: slipCats[idx], url: slipURLs[idx] };
-  } catch(e) {
-    console.error(`[slip ${idx+1}] failed:`, e.message);
-    return { ok: false, errMsg: e.message, category: slipCats[idx], url: slipURLs[idx] };
+  for (const model of SLIP_MODELS) {
+    try {
+      console.log(`[slip ${idx+1}] trying: ${model}`);
+      const text = await orFetch(model, [{
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } }
+        ]
+      }]);
+      console.log(`[slip ${idx+1}] ${model} →`, text);
+      const p = parseSlipJson(text);
+      return { ok: true, amount: p.amount, date: p.date, recipient: p.recipient, category: slipCats[idx], url: slipURLs[idx], model };
+    } catch(e) {
+      console.warn(`[slip ${idx+1}] ${model} failed:`, e.message);
+      lastErr = `${model.split('/')[1]}: ${e.message}`;
+    }
   }
+  return { ok: false, errMsg: lastErr, category: slipCats[idx], url: slipURLs[idx] };
 }
 
 function fileToBase64(file) {
