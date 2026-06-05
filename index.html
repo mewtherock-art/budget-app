@@ -878,7 +878,7 @@ function parseSlipJson(text) {
 async function geminiScanSlip(file, idx) {
   const b64 = await fileToBase64(file);
   const mime = file.type || 'image/jpeg';
-  const prompt = 'อ่านสลิปโอนเงินนี้ ตอบกลับเป็น JSON เท่านั้น ไม่มีข้อความอื่น format: {"amount": number, "date": "YYYY-MM-DD", "recipient": string} ถ้าหาข้อมูลไม่เจอใส่ null';
+  const prompt = 'อ่านสลิปโอนเงินนี้ ตอบกลับเป็น JSON เท่านั้น ไม่มีข้อความอื่น format: {"amount": number, "date": "YYYY-MM-DD", "recipient": string} ใช้ปี ค.ศ. (Gregorian/CE) เท่านั้นใน date เช่น 2026 ไม่ใช่ 2569 ถ้าหาข้อมูลไม่เจอใส่ null';
   let lastErr = '';
 
   for (const model of SLIP_MODELS) {
@@ -900,6 +900,13 @@ async function geminiScanSlip(file, idx) {
     }
   }
   return { ok: false, errMsg: lastErr, category: slipCats[idx], url: slipURLs[idx] };
+}
+
+function normalizeDate(dateStr) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return today();
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const year = y > 2500 ? y - 543 : y;
+  return `${year}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 }
 
 function fileToBase64(file) {
@@ -929,7 +936,7 @@ function renderResults(body) {
           </div>
           <div class="fg" style="margin-bottom:10px">
             <label class="fl">วันที่</label>
-            <input class="fi" type="date" id="r-date-${i}" value="${r.ok && r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : today()}">
+            <input class="fi" type="date" id="r-date-${i}" value="${r.ok && r.date ? normalizeDate(r.date) : today()}">
           </div>
           <div class="fg" style="margin-bottom:10px">
             <label class="fl">หมวดหมู่</label>
