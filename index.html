@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>บัญชีส่วนตัว</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
@@ -903,10 +906,12 @@ async function geminiScanSlip(file, idx) {
 }
 
 function normalizeDate(dateStr) {
-  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return today();
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const year = y > 2500 ? y - 543 : y;
-  return `${year}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  if (!dateStr) return today();
+  const s = String(dateStr).trim().replace(/T.*$/, ''); // strip time component
+  const mat = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!mat) return today();
+  const year = +mat[1] > 2500 ? +mat[1] - 543 : +mat[1]; // BE → CE
+  return `${year}-${mat[2].padStart(2,'0')}-${mat[3].padStart(2,'0')}`;
 }
 
 function fileToBase64(file) {
