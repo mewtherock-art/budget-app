@@ -777,7 +777,7 @@ function closeSettings() { document.getElementById('settings-overlay').classList
 document.getElementById('settings-overlay').addEventListener('click', e => { if (e.target===e.currentTarget) closeSettings(); });
 
 // ── SLIP SCANNER ──────────────────────────────────────────────
-let slipFiles = [], slipCats = [], slipResults = [], slipURLs = [], savedSlipIds = new Set();
+let slipFiles = [], slipCats = [], slipResults = [], slipURLs = [], savedSlipIds = new Set(), slipStep = 'upload';
 
 function openSlipScanner() {
   if (!localStorage.getItem('or_key')) {
@@ -790,6 +790,20 @@ function openSlipScanner() {
   showSlipStep('upload');
 }
 function closeSlip() {
+  if (slipStep === 'results') {
+    const txs = getTxs(); let count = 0;
+    slipResults.forEach((_, i) => {
+      if (savedSlipIds.has(i)) return;
+      const amt = parseFloat((document.getElementById(`r-amt-${i}`)?.value||'').replace(/,/g,''));
+      const date = document.getElementById(`r-date-${i}`)?.value || '';
+      const cat = document.getElementById(`r-cat-${i}`)?.value || '';
+      const note = document.getElementById(`r-note-${i}`)?.value?.trim() || '';
+      if (!amt || amt <= 0 || !date || !cat) return;
+      txs.push({ id: `${Date.now()}_${i}_${Math.random().toString(36).slice(2)}`, type: 'expense', amount: amt, category: cat, note, date });
+      savedSlipIds.add(i); count++;
+    });
+    if (count > 0) { saveTxs(txs); toast(`บันทึก ${count} รายการแล้ว ✓`); }
+  }
   document.getElementById('slip-overlay').classList.remove('show');
   slipURLs.forEach(u => URL.revokeObjectURL(u));
   slipURLs = [];
@@ -797,6 +811,7 @@ function closeSlip() {
 document.getElementById('slip-overlay').addEventListener('click', e => { if (e.target===e.currentTarget) closeSlip(); });
 
 function showSlipStep(step) {
+  slipStep = step;
   const body = document.getElementById('slip-body');
   document.getElementById('slip-title').textContent = {
     upload: 'สแกนสลิป',
