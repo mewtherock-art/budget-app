@@ -723,11 +723,12 @@ function saveKey() {
   toast('บันทึก API Key แล้ว ✓');
 }
 function skipKey() { document.getElementById('key-overlay').classList.remove('show'); }
+// ทุกตัวต้องเป็น vision-capable — สลิปเป็นรูป ถ้า fallback อ่านรูปไม่ได้จะ fail ทั้งแถว
 const SLIP_MODELS = [
-  'google/gemma-4-26b-a4b-it',
-  'mistralai/mistral-7b-instruct:free',
-  'meta-llama/llama-3.2-3b-instruct:free',
-  'google/gemma-3-4b-it:free',
+  'google/gemma-4-26b-a4b-it',                       // primary (vision)
+  'meta-llama/llama-3.2-11b-vision-instruct:free',   // fallback 1 (vision + free)
+  'google/gemma-3-12b-it:free',                      // fallback 2 (vision + free)
+  'google/gemma-3-4b-it:free',                       // fallback 3 (vision + free)
 ];
 
 async function orFetch(model, messages) {
@@ -896,7 +897,14 @@ function parseSlipJson(text) {
 async function geminiScanSlip(file, idx) {
   const b64 = await fileToBase64(file);
   const mime = file.type || 'image/jpeg';
-  const prompt = 'อ่านสลิปโอนเงินนี้ ตอบกลับเป็น JSON เท่านั้น ไม่มีข้อความอื่น format: {"amount": number, "date": "YYYY-MM-DD", "recipient": string} ใช้ปี ค.ศ. (Gregorian/CE) เท่านั้นใน date เช่น 2026 ไม่ใช่ 2569 ถ้าหาข้อมูลไม่เจอใส่ null';
+  const now = today(); const curYr = +now.slice(0,4);
+  const prompt = `วันนี้คือ ${now} (ค.ศ.). อ่านสลิปโอนเงินนี้ ตอบกลับเป็น JSON เท่านั้น ไม่มีข้อความอื่น format: {"amount": number, "date": "YYYY-MM-DD", "recipient": string}.
+กฎเรื่องปีในช่อง date (สำคัญมาก):
+- ใช้ปี ค.ศ. (Gregorian/CE) เท่านั้น
+- สลิปไทยมักพิมพ์ปีเป็น พ.ศ. (เช่น 2569) หรือ 2 หลัก (เช่น 69) ให้แปลงเป็น ค.ศ. ด้วยสูตร ค.ศ. = พ.ศ. − 543 (เช่น พ.ศ.2569 = ค.ศ.2026)
+- อ่านเลขปีให้ครบทุกหลักอย่างระมัดระวัง อย่าสับสน 6 กับ 9
+- ปีที่ได้ต้องอยู่ระหว่าง ${curYr-1} ถึง ${curYr} เท่านั้น ถ้าได้ปีอื่นแสดงว่าอ่านผิด ให้อ่านใหม่
+ถ้าหาข้อมูลไม่เจอใส่ null`;
   let lastErr = '';
 
   for (const model of SLIP_MODELS) {
@@ -941,7 +949,7 @@ function fileToBase64(file) {
 function renderResults(body) {
   const opts = EXP_CATS.map(c => `<option value="${c.id}">${c.icon} ${c.label}</option>`).join('');
   body.innerHTML = `
-    ${slipResults.map((r, i) => `
+    ${slipResults.map((r, i) => { const nd = r.ok && r.date ? normalizeDate(r.date) : today(); const offPeriod = periodKey(nd) !== curPeriodKey(); return `
       <div class="result-card" id="rcard-${i}">
         <img class="result-card-img" src="${r.url}">
         ${!r.ok ? `<div class="result-error-banner">😕 อ่านไม่สำเร็จ${r.errMsg ? ` — ${r.errMsg}` : ''}</div>` : ''}
@@ -956,7 +964,8 @@ function renderResults(body) {
           </div>
           <div class="fg" style="margin-bottom:10px">
             <label class="fl">วันที่</label>
-            <input class="fi" type="date" id="r-date-${i}" value="${r.ok && r.date ? normalizeDate(r.date) : today()}">
+            <input class="fi" type="date" id="r-date-${i}" value="${nd}" onchange="checkSlipDate(${i})"${offPeriod?' style="border-color:var(--expense)"':''}>
+            <div class="slip-date-warn" id="r-datewarn-${i}" style="font-size:12px;color:var(--expense);margin-top:5px;${offPeriod?'':'display:none'}">⚠️ วันที่นี้อยู่คนละงวดกับเดือนปัจจุบัน — บันทึกได้แต่จะไม่ขึ้นหน้าแรก เช็กปีให้ถูก</div>
           </div>
           <div class="fg" style="margin-bottom:10px">
             <label class="fl">หมวดหมู่</label>
@@ -970,7 +979,7 @@ function renderResults(body) {
           </div>
           <button class="result-save-btn" id="r-btn-${i}" onclick="saveSlipResult(${i})">✓ บันทึก</button>
         </div>
-      </div>`).join('')}
+      </div>`; }).join('')}
     <button class="save-btn" style="margin-top:4px;margin-bottom:10px" onclick="saveAllSlipResults()">บันทึกทั้งหมด</button>
     <button class="sheet-btn cancel" style="width:100%;margin-bottom:8px" onclick="closeSlip();goTab('home',document.querySelector('.tab'))">ยกเลิก / กลับหน้าหลัก</button>`;
 
@@ -994,6 +1003,15 @@ function renderResults(body) {
       try { this.setSelectionRange(pos+diff, pos+diff); } catch(e) {}
     });
   });
+}
+
+function checkSlipDate(i) {
+  const el = document.getElementById(`r-date-${i}`);
+  const warn = document.getElementById(`r-datewarn-${i}`);
+  if (!el || !warn) return;
+  const off = el.value && periodKey(el.value) !== curPeriodKey();
+  warn.style.display = off ? 'block' : 'none';
+  el.style.borderColor = off ? 'var(--expense)' : '';
 }
 
 function saveSlipResult(i) {
