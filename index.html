@@ -329,7 +329,10 @@
     <div class="mo-sel">
       <button class="mo-nav" onclick="chgMo(-1)">‹</button>
       <span class="mo-label" id="s-mo-label"></span>
-      <button class="mo-nav" onclick="chgMo(1)">›</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="mo-nav" onclick="chgMo(1)">›</button>
+        <button class="mo-nav" onclick="exportCsv()" title="Export CSV" style="font-size:16px">⬇️</button>
+      </div>
     </div>
     <div class="card">
       <div class="card-title">รายรับ-รายจ่าย 12 เดือนล่าสุด</div>
@@ -523,7 +526,7 @@ function renderHome() {
   document.getElementById('h-bal').textContent = fmtAmt(inc-exp);
   document.getElementById('h-inc').textContent = fmtAmt(inc);
   document.getElementById('h-exp').textContent = fmtAmt(exp);
-  const recent = [...txs].sort((a,b)=>b.id-a.id).slice(0,5);
+  const recent = [...txs].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id)).slice(0,5);
   const el = document.getElementById('h-recent');
   if (!recent.length) { el.innerHTML=`<div class="empty"><div class="ei">📭</div><p>ยังไม่มีรายการ<br>เพิ่มรายการแรกได้เลย</p></div>`; return; }
   el.innerHTML = recent.map(t => txHTML(t, false)).join('');
@@ -649,6 +652,26 @@ function renderRanking() {
       <span class="rank-chevron">›</span>
     </div>`;
   }).join('');
+}
+
+// ── CSV EXPORT ────────────────────────────────────────────────
+function exportCsv() {
+  const txs = getTxs().filter(t => periodKey(t.date) === sMo);
+  if (!txs.length) { toast('ไม่มีรายการในเดือนนี้'); return; }
+  txs.sort((a,b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  const rows = [['วันที่','ประเภท','หมวดหมู่','หมายเหตุ','จำนวนเงิน']];
+  txs.forEach(t => {
+    const c = catInfo(t.type, t.category);
+    rows.push([t.date, t.type==='income'?'รายรับ':'รายจ่าย', c.label, t.note||'', t.amount]);
+  });
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `budget_${sMo}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('Export CSV สำเร็จ ✓');
 }
 
 // ── CATEGORY DETAIL MODAL ─────────────────────────────────────
