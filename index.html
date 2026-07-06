@@ -335,7 +335,7 @@
         <button class="mo-nav" onclick="chgMo(1)">›</button>
         <button class="mo-nav" onclick="exportCsv()" title="Export CSV" style="font-size:16px">⬇️</button>
         <button class="mo-nav" onclick="document.getElementById('import-file-input').click()" title="Import CSV" style="font-size:16px">📥</button>
-        <input type="file" id="import-file-input" accept=".csv" style="display:none" onchange="handleImportFile(this)">
+        <input type="file" id="import-file-input" accept=".csv,.xlsx" style="display:none" onchange="handleImportFile(this)">
       </div>
     </div>
     <div class="card">
@@ -750,22 +750,76 @@ function parseImportRow(cols) {
 let pendingImport = [];
 const IMPORT_HEADER = ['วันที่','ประเภท','หมวดหมู่','หมายเหตุ','จำนวนเงิน'];
 
+// SheetJS is only needed for .xlsx — load it from CDN on first use
+let sheetJsPromise = null;
+function loadSheetJs() {
+  if (window.XLSX) return Promise.resolve();
+  if (!sheetJsPromise) {
+    sheetJsPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+      s.onload = resolve;
+      s.onerror = () => { sheetJsPromise = null; reject(new Error('SheetJS load failed')); };
+      document.head.appendChild(s);
+    });
+  }
+  return sheetJsPromise;
+}
+
+// Excel stores dates as serial numbers and may format amounts with commas —
+// normalize each cell back to the strings parseImportRow expects
+function normalizeXlsxRow(r) {
+  const row = [];
+  for (let i = 0; i < 5; i++) row[i] = (r[i] === undefined || r[i] === null) ? '' : r[i];
+  if (typeof row[0] === 'number') {
+    const d = XLSX.SSF.parse_date_code(row[0]);
+    row[0] = d ? `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}` : '';
+  } else if (row[0] instanceof Date) {
+    row[0] = `${row[0].getFullYear()}-${String(row[0].getMonth()+1).padStart(2,'0')}-${String(row[0].getDate()).padStart(2,'0')}`;
+  }
+  row[0] = String(row[0]).trim();
+  row[1] = String(row[1]).trim();
+  row[2] = String(row[2]).trim();
+  row[3] = String(row[3]);
+  row[4] = typeof row[4] === 'number' ? row[4] : String(row[4]).replace(/,/g, '').trim();
+  return row;
+}
+
 function handleImportFile(input) {
   const file = input.files[0];
   input.value = ''; // allow re-selecting the same file next time
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => processImportText(reader.result);
   reader.onerror = () => toast('ไฟล์ไม่ถูกต้อง');
-  reader.readAsText(file, 'utf-8');
+  if (/\.xlsx$/i.test(file.name)) {
+    reader.onload = () => {
+      loadSheetJs().then(() => {
+        let rows;
+        try {
+          const wb = XLSX.read(reader.result, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+        } catch { toast('ไฟล์ไม่ถูกต้อง'); return; }
+        processImportRows(rows.map(normalizeXlsxRow));
+      }).catch(() => toast('โหลดตัวอ่าน Excel ไม่ได้ — เช็คอินเทอร์เน็ต'));
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    reader.onload = () => processImportText(reader.result);
+    reader.readAsText(file, 'utf-8');
+  }
 }
 
 function processImportText(text) {
   if (!text) { toast('ไฟล์ไม่ถูกต้อง'); return; }
   if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
-  const rows = parseCsv(text).filter(r => !(r.length === 1 && r[0].trim() === ''));
+  processImportRows(parseCsv(text));
+}
+
+function processImportRows(rows) {
+  rows = rows.filter(r => r.length && !r.every(f => String(f).trim() === ''));
   if (!rows.length) { toast('ไฟล์ไม่ถูกต้อง'); return; }
-  const header = rows[0].map(h => h.trim());
+  const header = rows[0].map(h => String(h).trim());
   if (header.length !== IMPORT_HEADER.length || !header.every((h,i) => h === IMPORT_HEADER[i])) {
     toast('ไฟล์ไม่ถูกต้อง'); return;
   }
