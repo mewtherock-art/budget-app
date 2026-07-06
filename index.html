@@ -200,6 +200,8 @@
     .sheet-btn { padding: 15px; border: none; border-radius: 13px; font-size: 15px; font-family: inherit; cursor: pointer; font-weight: 600; min-height: 50px; }
     .sheet-btn.cancel { background: var(--bg); color: var(--text); }
     .sheet-btn.del { background: var(--expense); color: white; }
+    .sheet-btn.primary { background: var(--primary); color: white; }
+    .sheet-btn.primary:disabled { opacity: .5; cursor: default; }
 
     ::-webkit-scrollbar { display: none; }
 
@@ -332,6 +334,8 @@
       <div style="display:flex;gap:6px;align-items:center">
         <button class="mo-nav" onclick="chgMo(1)">›</button>
         <button class="mo-nav" onclick="exportCsv()" title="Export CSV" style="font-size:16px">⬇️</button>
+        <button class="mo-nav" onclick="document.getElementById('import-file-input').click()" title="Import CSV" style="font-size:16px">📥</button>
+        <input type="file" id="import-file-input" accept=".csv" style="display:none" onchange="handleImportFile(this)">
       </div>
     </div>
     <div class="card">
@@ -433,6 +437,18 @@
     <div class="sheet-btns">
       <button class="sheet-btn cancel" onclick="closeOv()">ยกเลิก</button>
       <button class="sheet-btn del" onclick="doDelete()">ลบ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import confirm -->
+<div class="overlay" id="import-overlay">
+  <div class="sheet">
+    <div class="sheet-title">นำเข้าข้อมูล</div>
+    <div class="sheet-msg" id="import-msg"></div>
+    <div class="sheet-btns">
+      <button class="sheet-btn cancel" onclick="closeImportSheet()">ยกเลิก</button>
+      <button class="sheet-btn primary" id="import-confirm-btn" onclick="confirmImport()">นำเข้า</button>
     </div>
   </div>
 </div>
@@ -656,8 +672,8 @@ function renderRanking() {
 
 // ── CSV EXPORT ────────────────────────────────────────────────
 function exportCsv() {
-  const txs = getTxs().filter(t => periodKey(t.date) === sMo);
-  if (!txs.length) { toast('ไม่มีรายการในเดือนนี้'); return; }
+  const txs = getTxs();
+  if (!txs.length) { toast('ไม่มีรายการ'); return; }
   txs.sort((a,b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const rows = [['วันที่','ประเภท','หมวดหมู่','หมายเหตุ','จำนวนเงิน']];
   txs.forEach(t => {
@@ -666,13 +682,143 @@ function exportCsv() {
   });
   const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
+  const firstP = periodKey(txs[0].date);
+  const lastP = periodKey(txs[txs.length-1].date);
+  const fname = firstP === lastP ? `budget_${firstP}.csv` : `budget_${firstP}_${lastP}.csv`;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `budget_${sMo}.csv`;
+  a.download = fname;
   a.click();
   URL.revokeObjectURL(a.href);
   toast('Export CSV สำเร็จ ✓');
 }
+
+// ── CSV IMPORT ────────────────────────────────────────────────
+// Parses CSV text into rows of fields. Handles quoted fields, "" escaping,
+// commas/newlines inside quotes, and both \r\n and \n line endings.
+function parseCsv(text) {
+  const rows = []; let row = [], field = '', inQuotes = false;
+  let i = 0; const len = text.length;
+  while (i < len) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i+1] === '"') { field += '"'; i += 2; continue; }
+        inQuotes = false; i++; continue;
+      }
+      field += ch; i++; continue;
+    }
+    if (ch === '"') { inQuotes = true; i++; continue; }
+    if (ch === ',') { row.push(field); field = ''; i++; continue; }
+    if (ch === '\r') { i++; continue; }
+    if (ch === '\n') { row.push(field); field = ''; rows.push(row); row = []; i++; continue; }
+    field += ch; i++;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function labelToCatId(type, label) {
+  const cats = type === 'income' ? INC_CATS : EXP_CATS;
+  const found = cats.find(c => c.label === label);
+  return found ? found.id : (type === 'income' ? 'other_i' : 'other_e');
+}
+
+function isRealDate(y, m, d) {
+  const dt = new Date(y, m-1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m-1 && dt.getDate() === d;
+}
+
+// Returns { type, date, category, note, amount } or null if the row is invalid
+function parseImportRow(cols) {
+  if (!cols || cols.length < 5) return null;
+  const [dateStr, typeStr, catLabel, note, amtStr] = cols;
+  let type;
+  if (typeStr === 'รายรับ') type = 'income';
+  else if (typeStr === 'รายจ่าย') type = 'expense';
+  else return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '');
+  if (!m) return null;
+  const [, ys, ms, ds] = m;
+  if (!isRealDate(+ys, +ms, +ds)) return null;
+  const amount = Number(amtStr);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const category = labelToCatId(type, catLabel);
+  return { type, date: dateStr, category, note: note || '', amount };
+}
+
+let pendingImport = [];
+const IMPORT_HEADER = ['วันที่','ประเภท','หมวดหมู่','หมายเหตุ','จำนวนเงิน'];
+
+function handleImportFile(input) {
+  const file = input.files[0];
+  input.value = ''; // allow re-selecting the same file next time
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => processImportText(reader.result);
+  reader.onerror = () => toast('ไฟล์ไม่ถูกต้อง');
+  reader.readAsText(file, 'utf-8');
+}
+
+function processImportText(text) {
+  if (!text) { toast('ไฟล์ไม่ถูกต้อง'); return; }
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
+  const rows = parseCsv(text).filter(r => !(r.length === 1 && r[0].trim() === ''));
+  if (!rows.length) { toast('ไฟล์ไม่ถูกต้อง'); return; }
+  const header = rows[0].map(h => h.trim());
+  if (header.length !== IMPORT_HEADER.length || !header.every((h,i) => h === IMPORT_HEADER[i])) {
+    toast('ไฟล์ไม่ถูกต้อง'); return;
+  }
+  const dataRows = rows.slice(1);
+  const existing = getTxs();
+  const rowKey = r => JSON.stringify([r.date, r.type, r.category, r.note, r.amount]);
+  const existingKeys = new Set(existing.map(rowKey));
+  const batchKeys = new Set();
+  const toAdd = [];
+  let dupCount = 0, invalidCount = 0;
+  dataRows.forEach(cols => {
+    const parsed = parseImportRow(cols);
+    if (!parsed) { invalidCount++; return; }
+    const key = rowKey(parsed);
+    if (existingKeys.has(key) || batchKeys.has(key)) { dupCount++; return; }
+    batchKeys.add(key);
+    toAdd.push(parsed);
+  });
+  pendingImport = toAdd;
+  showImportConfirm(dataRows.length, toAdd.length, dupCount, invalidCount);
+}
+
+function showImportConfirm(n, x, y, z) {
+  const lines = [`พบ ${n} รายการในไฟล์`, `เพิ่มใหม่ ${x}`, `ซ้ำ (ข้าม) ${y}`];
+  if (z > 0) lines.push(`อ่านไม่ได้ ${z}`);
+  document.getElementById('import-msg').innerHTML = lines.join('<br>');
+  const btn = document.getElementById('import-confirm-btn');
+  btn.disabled = x === 0;
+  document.getElementById('import-overlay').classList.add('show');
+}
+function closeImportSheet() {
+  pendingImport = [];
+  document.getElementById('import-overlay').classList.remove('show');
+}
+function confirmImport() {
+  if (!pendingImport.length) {
+    closeImportSheet();
+    toast('ไม่มีรายการใหม่');
+    return;
+  }
+  const txs = getTxs();
+  const now = Date.now();
+  pendingImport.forEach((row, i) => {
+    txs.push({ id: `${now}_imp_${i}_${Math.random().toString(36).slice(2)}`, type: row.type, amount: row.amount, category: row.category, note: row.note, date: row.date });
+  });
+  saveTxs(txs);
+  const count = pendingImport.length;
+  pendingImport = [];
+  document.getElementById('import-overlay').classList.remove('show');
+  renderSummary();
+  toast(`นำเข้า ${count} รายการ ✓`);
+}
+document.getElementById('import-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeImportSheet(); });
 
 // ── CATEGORY DETAIL MODAL ─────────────────────────────────────
 function openCatModal(catId) {
