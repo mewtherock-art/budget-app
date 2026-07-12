@@ -338,6 +338,10 @@
         <input type="file" id="import-file-input" accept=".csv,.xlsx" style="display:none" onchange="handleImportFile(this)">
       </div>
     </div>
+    <div class="sm-grid">
+      <div class="sm-card"><div class="lbl">💚 รายรับ</div><div class="amt c-income" id="s-inc">฿0</div></div>
+      <div class="sm-card"><div class="lbl">❤️ รายจ่าย</div><div class="amt c-expense" id="s-exp">฿0</div></div>
+    </div>
     <div class="card">
       <div class="card-title">รายรับ-รายจ่าย 12 เดือนล่าสุด</div>
       <div class="chart-wrap"><canvas id="bar-chart"></canvas></div>
@@ -609,7 +613,14 @@ function chgMo(d) {
 }
 function renderSummary() {
   document.getElementById('s-mo-label').textContent = periodLabel(sMo);
-  renderChart(); renderRanking();
+  renderTotals(); renderChart(); renderRanking();
+}
+function renderTotals() {
+  const mt = getTxs().filter(t => periodKey(t.date)===sMo);
+  const inc = mt.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const exp = mt.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  document.getElementById('s-inc').textContent = fmtAmt(inc);
+  document.getElementById('s-exp').textContent = fmtAmt(exp);
 }
 function renderChart() {
   const txs = getTxs(); const labels=[], incD=[], expD=[];
